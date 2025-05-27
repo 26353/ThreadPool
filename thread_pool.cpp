@@ -9,63 +9,72 @@
 class ThreadPool
 {
 public:
+    // 构造函数:创建指定数量的工作线程
+    // 参数numTreads:线程池中工作线程的数量
     ThreadPool(int numThreads) : stop(false)
     {
         for (int i = 0; i < numThreads; i++)
         {
-            threads.emplace_back([this]
-                                 {
+            // 使用emplace_back直接构造线程对象（避免拷贝）
+            threads.emplace_back(
+                // 每个线程执行一个无线循环的任务处理逻辑
+                [this]
+                {
                                      while (1)
                                      {
-                                         std::unique_lock<std::mutex> lock(mtx);
+                                         std::unique_lock<std::mutex> lock(mtx);//访问共享资源前加锁
+                                         //等待条件变量唤醒，唤醒条件：任务队列非空或线程池停止标志为真
                                          condition.wait(lock, [this]()
                                                         { return !tasks.empty() || stop; });
+                                        //如果线程池以停止工作，结束线程
                                          if (stop)
                                          {
                                              return;
                                          }
                                          std::function<void()> task(std::move(tasks.front()));
                                          tasks.pop();
-                                         lock.unlock();
-                                         task();
+                                         lock.unlock();//提前释放锁，允许其他线程继续操作队列
+                                         task();//执行任务（在无锁状态下执行，减少锁竞争）
                                      } }
 
             );
         } // 比push_back节省资源，emplace_back进行有参构造，push_back是拷贝构造，同时线程不支持拷贝构造
     }
+    // 析构函数：安全停止所有线程并回收资源
     ~ThreadPool()
     {
         {
             std::unique_lock<std::mutex> lock(mtx);
-            stop = true;
+            stop = true; // 设置停止标志
         }
-        condition.notify_all();
+        condition.notify_all(); // 唤醒所有等待线程
+        // 等待所有工作线程结束
         for (auto &t : threads)
         {
             t.join();
         }
     }
-    template <class F, class... Args> // 可变列表
+    template <class F, class... Args> // 可变参数列表
     void enqueue(F &&f, Args &&...args)
     {
-        std::function<void()> task = std::bind(std::forward<F>(f), std::forward<F>((args)...));
+        std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
         // 函数参数和函数绑定在一起后，不论函数有多少个参数都不用在传参
 
         {
             std::unique_lock<std::mutex> lock(mtx);
-            tasks.emplace(std::move(task));
+            tasks.emplace(std::move(task)); // 将任务加入队列（移动语义提升性能）
         }
-        condition.notify_one();
+        condition.notify_one(); // 通知一个等待中的线程
 
     } // 两个取值在函数里是右值引用，一个是左值引用，模板中两个&是万能引用
 private:
-    std::vector<std::thread> threads;
-    std ::queue<std::function<void()>> tasks;
+    std::vector<std::thread> threads;         // 工作线程集合
+    std ::queue<std::function<void()>> tasks; // 任务队列（存储无参void函数）
 
-    std::mutex mtx;
-    std::condition_variable condition;
+    std::mutex mtx;                    // 保护任务队列和停止标志的互斥锁
+    std::condition_variable condition; // 任务通知条件变量
 
-    bool stop;
+    bool stop; // 线程池停止标志（true时终止所有线程）
 };
 int main()
 {

@@ -27,7 +27,7 @@ public:
                                          condition.wait(lock, [this]()
                                                         { return !tasks.empty() || stop; });
                                         //如果线程池以停止工作，结束线程
-                                         if (stop)
+                                         if (stop&&tasks.empty())
                                          {
                                              return;
                                          }
@@ -80,7 +80,12 @@ int main()
 {
     ThreadPool pool(4);
 
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < 100; i++)
     {
+        pool.enqueue([i]()
+                     { std::cout << "task:" << i+1 << "is running" << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::cout << "task:" << i+1 << "is done" << std::endl; });
     }
+    return 0;
 }

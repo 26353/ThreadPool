@@ -76,6 +76,8 @@ private:
 
     bool stop; // 线程池停止标志（true时终止所有线程）
 };
+// #define TEST
+#ifdef TEST
 int main()
 {
     ThreadPool pool(4);
@@ -84,8 +86,53 @@ int main()
     {
         pool.enqueue([i]()
                      { std::cout << "task:" << i+1 << "is running" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(std::chrono::seconds(1));//暂停下，否则线程太快不好观察
             std::cout << "task:" << i+1 << "is done" << std::endl; });
     }
     return 0;
 }
+#else
+std::mutex Mtx;
+void _sort(std::vector<int> &al, int left, int right, ThreadPool &pool)
+{
+    if (left >= right)
+        return;
+    pool.enqueue([&]
+                 {
+                    int i = left;
+                    int j = right;
+                    int _base = al[left];
+        while (i < j)
+        {
+
+            while (i < j && _base <= al[j])
+            {
+                j--;
+            }
+            while (i < j && al[i] <= _base)
+            {
+                i++;
+            }
+            if (i != j)
+            {
+                int temp = al[i];
+                al[i] = al[j];
+                al[j] = temp;
+            }
+            al[left] = al[i];
+            al[i] = _base;
+            _sort(al, left, i - 1, pool);
+            _sort(al, i + 1, right, pool);
+        } });
+} // 快速排序
+int main()
+{
+    ThreadPool pool(5);
+    std::vector<int> al{3, 6, 3, 7, 5, 4, 2, 6, 8, 9};
+    _sort(al, 0, al.size() - 1, pool);
+    for (int i = 0; i < al.size(); i++)
+    {
+        std::cout << al[i] << " ";
+    }
+}
+#endif
